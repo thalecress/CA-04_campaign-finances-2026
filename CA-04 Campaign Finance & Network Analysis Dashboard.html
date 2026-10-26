@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CA-04 Network Analysis & Campaign Finance Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js v7 CDN -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        slate: { 850: '#131e32', 950: '#070d19' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-card {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .light .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        /* D3 Tooltip styling */
+        .d3-tooltip {
+            position: absolute;
+            pointer-events: none;
+            transition: opacity 0.15s ease-in-out;
+            z-index: 100;
+        }
+
+        .node { cursor: pointer; transition: stroke-width 0.2s, opacity 0.2s; }
+        .node:hover { stroke: #ffffff; stroke-width: 3px; }
+        .link { transition: stroke-opacity 0.2s, stroke-width 0.2s; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col transition-colors duration-300">
+
+    <!-- Header / Navbar -->
+    <header class="border-b border-slate-800/80 bg-slate-900/80 sticky top-0 z-40 backdrop-blur-md">
+        <div class="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-gradient-to-tr from-blue-600 to-indigo-500 text-white p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-diagram-project text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
+                        CA-04 Campaign Finance Intelligence Hub
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">2026 General</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Network Topology & Transaction Ledger • Eric Jones vs. Rep. Mike Thompson</p>
+                </div>
+            </div>
+
+            <!-- Header Quick Stats & Controls -->
+            <div class="flex items-center space-x-4">
+                <div class="hidden lg:flex items-center space-x-6 text-xs border-r border-slate-800 pr-6">
+                    <div>
+                        <span class="text-slate-400 block">Total District Network Volume</span>
+                        <span class="text-sm font-bold text-emerald-400" id="header-total-volume">$28.13M</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block">Total Entities Tracked</span>
+                        <span class="text-sm font-bold text-sky-400" id="header-total-entities">28 Nodes</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block">Super PAC Inflow</span>
+                        <span class="text-sm font-bold text-amber-400" id="header-superpac-inflow">$4.25M</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button id="theme-toggle" onclick="toggleTheme()" class="p-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition">
+                        <i class="fa-solid fa-moon text-sm" id="theme-icon"></i>
+                    </button>
+                    <button onclick="exportCSV()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition">
+                        <i class="fa-solid fa-download"></i>
+                        <span>Export CSV</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-[1800px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Top KPI Overview Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            <div class="glass-card rounded-2xl p-4 flex items-center space-x-4 border-l-4 border-l-sky-500">
+                <div class="p-3 bg-sky-500/10 rounded-xl text-sky-400">
+                    <i class="fa-solid fa-filter-circle-dollar text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">Filtered Network Volume</div>
+                    <div class="text-2xl font-black text-white tracking-tight" id="kpi-volume">$28.13M</div>
+                    <div class="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                        <span class="text-sky-400 font-semibold" id="kpi-volume-pct">100%</span> of overall district network
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-4 flex items-center space-x-4 border-l-4 border-l-indigo-500">
+                <div class="p-3 bg-indigo-500/10 rounded-xl text-indigo-400">
+                    <i class="fa-solid fa-circle-nodes text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">Active Network Topology</div>
+                    <div class="text-2xl font-black text-white tracking-tight" id="kpi-nodes">28 Nodes / 38 Edges</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5" id="kpi-density">Network Density: <span class="text-indigo-300 font-semibold">0.101</span></div>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-4 flex items-center space-x-4 border-l-4 border-l-amber-500">
+                <div class="p-3 bg-amber-500/10 rounded-xl text-amber-400">
+                    <i class="fa-solid fa-bolt text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">Primary Network Hub</div>
+                    <div class="text-xl font-extrabold text-white truncate max-w-[180px]" id="kpi-hub">Eric Jones Campaign</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5" id="kpi-hub-val">$18.40M Connected Flows</div>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-4 flex items-center space-x-4 border-l-4 border-l-rose-500">
+                <div class="p-3 bg-rose-500/10 rounded-xl text-rose-400">
+                    <i class="fa-solid fa-receipt text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">Filtered Ledger Filings</div>
+                    <div class="text-2xl font-black text-white tracking-tight" id="kpi-tx-count">38 Records</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">FEC Form 3, 6 & Schedule E disclosures</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Filter Controls Bar -->
+        <div class="glass-card rounded-2xl p-5 shadow-xl space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-sliders text-indigo-400"></i>
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-white">Hierarchical Network & Data Filters</h2>
+                </div>
+                
+                <!-- Keyword Search Box with Autocomplete -->
+                <div class="relative w-full lg:w-96">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input type="text" id="search-input" onkeyup="handleSearch(this.value)" placeholder="Search entities, donors, vendors, or amounts..." 
+                        class="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+                    <button id="clear-search" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                
+                <!-- Candidate Filter -->
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Candidate Ecosystem</label>
+                    <select id="filter-candidate" onchange="applyFilters()" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition">
+                        <option value="ALL">All Candidates (Jones & Thompson)</option>
+                        <option value="JONES">Eric Jones Ecosystem</option>
+                        <option value="THOMPSON">Mike Thompson Ecosystem</option>
+                    </select>
+                </div>
+
+                <!-- Entity Type Filter -->
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Node Entity Type</label>
+                    <select id="filter-type" onchange="applyFilters()" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition">
+                        <option value="ALL">All Entity Types</option>
+                        <option value="CANDIDATE">Candidate Committees</option>
+                        <option value="SUPER_PAC">Super PACs / IE Committees</option>
+                        <option value="SECTOR">Industry Sectors / Categories</option>
+                        <option value="INDIVIDUAL">Individual Donors / Key Entities</option>
+                        <option value="VENDOR">Vendors / IE Recipients</option>
+                    </select>
+                </div>
+
+                <!-- Sector/Industry Filter -->
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Industry / Source Category</label>
+                    <select id="filter-sector" onchange="applyFilters()" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition">
+                        <option value="ALL">All Sectors & Sources</option>
+                        <option value="Self-Funding">Self-Funding / Candidate Loans</option>
+                        <option value="Tech Industry">Tech Industry & Founders</option>
+                        <option value="Venture Capital">Venture Capital & PE</option>
+                        <option value="PACs & Committees">Corporate & Industry PACs</option>
+                        <option value="Agriculture & Wine">Agriculture & Wine Sector</option>
+                        <option value="Real Estate & Legal">Real Estate & Legal Services</option>
+                        <option value="Healthcare & Pharma">Healthcare & Pharma</option>
+                        <option value="Independent Expenditure">Independent Expenditure / Super PAC</option>
+                    </select>
+                </div>
+
+                <!-- Min Transaction Amount Slider -->
+                <div class="sm:col-span-2">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-[11px] font-semibold text-slate-400">Min Flow Value Filter</label>
+                        <span class="text-xs font-bold text-indigo-400" id="slider-val-display">$0</span>
+                    </div>
+                    <input type="range" id="min-amount-slider" min="0" max="5000000" step="50000" value="0" oninput="updateSliderValue(this.value)" onchange="applyFilters()"
+                        class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                        <span>$0 (All Micro Filings)</span>
+                        <span>$500k</span>
+                        <span>$1M</span>
+                        <span>$5M+ (High-Cap Only)</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Main Visual Grid: Network Graph & Interactive Side Detail Panel -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Network Graph Visualizer (8 cols) -->
+            <div class="lg:col-span-8 glass-card rounded-2xl p-5 flex flex-col relative overflow-hidden shadow-2xl min-h-[600px]">
+                
+                <!-- Top Canvas Controls & Legends -->
+                <div class="flex flex-wrap items-center justify-between pb-4 mb-2 border-b border-slate-800 gap-3 z-10">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <h3 class="text-sm font-bold text-white">Direct Money Flow Topology</h3>
+                    </div>
+
+                    <!-- Canvas Interactive Buttons -->
+                    <div class="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+                        <button onclick="resetZoom()" class="px-2.5 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition" title="Reset Zoom & Pan">
+                            <i class="fa-solid fa-expand"></i> Reset View
+                        </button>
+                        <button id="btn-physics" onclick="togglePhysics()" class="px-2.5 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition" title="Pause Force Animation">
+                            <i class="fa-solid fa-pause"></i> <span id="lbl-physics">Pause Physics</span>
+                        </button>
+                        <button onclick="resetSelection()" class="px-2.5 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition" title="Clear Highlight">
+                            <i class="fa-solid fa-rotate-left"></i> Clear Selection
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Network Legend -->
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400 pb-3 z-10 border-b border-slate-800/40">
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-3 h-3 rounded-full bg-sky-500 inline-block"></span>
+                        <span>Eric Jones Node</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
+                        <span>Mike Thompson Node</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
+                        <span>Super PAC / IE Committee</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span>
+                        <span>Industry / Donor Sector</span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-3 h-3 rounded-full bg-purple-400 inline-block"></span>
+                        <span>Individual Donor / Vendor</span>
+                    </div>
+                </div>
+
+                <!-- D3 SVG Container -->
+                <div id="network-container" class="w-full flex-1 min-h-[500px] relative bg-slate-950/40 rounded-xl overflow-hidden border border-slate-800/50">
+                    <svg id="network-svg" class="w-full h-full min-h-[500px] cursor-grab active:cursor-grabbing"></svg>
+                    
+                    <!-- D3 Hover Tooltip -->
+                    <div id="tooltip" class="d3-tooltip opacity-0 glass-card p-3 rounded-xl border border-slate-700 shadow-2xl text-xs space-y-1"></div>
+                </div>
+            </div>
+
+            <!-- Interactive Node Detail Side Panel (4 cols) -->
+            <div class="lg:col-span-4 glass-card rounded-2xl p-5 flex flex-col justify-between shadow-2xl space-y-5">
+                <div>
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-circle-info text-indigo-400"></i>
+                            Ego-Network Inspector
+                        </h3>
+                        <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 uppercase tracking-wider font-mono">Select Any Node</span>
+                    </div>
+
+                    <!-- Node Inspector Body (Dynamic) -->
+                    <div id="inspector-default" class="py-12 text-center space-y-3">
+                        <div class="w-12 h-12 rounded-2xl bg-slate-800/80 text-slate-500 flex items-center justify-center mx-auto text-xl">
+                            <i class="fa-solid fa-hand-pointer animate-bounce"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-slate-300">No Entity Selected</div>
+                        <p class="text-xs text-slate-500 max-w-xs mx-auto">Click on any candidate, donor, sector, or Super PAC node in the topology map to highlight its entire transaction sub-network.</p>
+                    </div>
+
+                    <div id="inspector-content" class="hidden space-y-4 pt-3">
+                        
+                        <!-- Header Entity Badge -->
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <span id="node-type-badge" class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Candidate</span>
+                                <h4 id="node-title" class="text-xl font-extrabold text-white mt-1">Eric Jones</h4>
+                                <p id="node-subtitle" class="text-xs text-slate-400">Principal Campaign Committee • ID: C00919100</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-xs text-slate-400">Total Volume</div>
+                                <div id="node-total-val" class="text-xl font-black text-emerald-400">$18.40M</div>
+                            </div>
+                        </div>
+
+                        <!-- Metric Quick Grid -->
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                                <div class="text-slate-400 text-[10px]">Direct Degree (Links)</div>
+                                <div id="node-degree" class="font-bold text-white text-sm">12 Connections</div>
+                            </div>
+                            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                                <div class="text-slate-400 text-[10px]">Primary Affiliation</div>
+                                <div id="node-affiliation" class="font-bold text-indigo-300 text-sm">Challenger (Dem)</div>
+                            </div>
+                        </div>
+
+                        <!-- Connected Entities Breakdown List -->
+                        <div>
+                            <div class="text-xs font-bold text-slate-300 mb-2 flex justify-between items-center">
+                                <span>Connected Counterparties</span>
+                                <span class="text-[10px] text-slate-500" id="connected-count">0 items</span>
+                            </div>
+                            <div id="connected-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                <!-- Dynamic list items inserted here -->
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Footer Summary Note -->
+                <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 flex items-start space-x-2">
+                    <i class="fa-solid fa-shield-halved text-indigo-400 mt-0.5 text-xs"></i>
+                    <div>
+                        <strong class="text-slate-200">Data Integrity Notice:</strong> Derived from official FEC Form 3 quarterly filings and 24-hr Form 6 / Schedule E reports through late October 2026.
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Full Interactive Transaction Ledger & Deep Aggregation -->
+        <div class="glass-card rounded-2xl p-5 shadow-2xl space-y-4">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-800 gap-4">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-emerald-400"></i>
+                        Itemized Campaign Transaction Ledger
+                    </h3>
+                    <p class="text-xs text-slate-400">Drill down into specific contributor filings, loans, and independent expenditures</p>
+                </div>
+
+                <div class="flex items-center space-x-3 text-xs">
+                    <span class="text-slate-400">Showing <strong class="text-white" id="table-count-display">38</strong> matching records</span>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto rounded-xl border border-slate-800">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800">
+                            <th class="py-3 px-4 cursor-pointer hover:text-white" onclick="sortTable('date')">Date <i class="fa-solid fa-sort text-[10px]"></i></th>
+                            <th class="py-3 px-4 cursor-pointer hover:text-white" onclick="sortTable('source')">Source / Contributor <i class="fa-solid fa-sort text-[10px]"></i></th>
+                            <th class="py-3 px-4 cursor-pointer hover:text-white" onclick="sortTable('target')">Recipient / Entity <i class="fa-solid fa-sort text-[10px]"></i></th>
+                            <th class="py-3 px-4">Category / Sector</th>
+                            <th class="py-3 px-4">Flow Type</th>
+                            <th class="py-3 px-4 text-right cursor-pointer hover:text-white" onclick="sortTable('amount')">Amount ($) <i class="fa-solid fa-sort text-[10px]"></i></th>
+                        </tr>
+                    </thead>
+                    <tbody id="ledger-tbody" class="divide-y divide-slate-800/60 font-mono">
+                        <!-- Dynamic Ledger Rows -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Pagination & Footer Controls -->
+            <div class="flex flex-col sm:flex-row justify-between items-center text-xs text-slate-400 pt-2 gap-4">
+                <div>Page <span class="font-bold text-white" id="page-num">1</span> of <span class="font-bold text-white" id="page-total">1</span></div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="changePage(-1)" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-200 disabled:opacity-50 transition" id="btn-prev">
+                        <i class="fa-solid fa-chevron-left"></i> Previous
+                    </button>
+                    <button onclick="changePage(1)" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-200 disabled:opacity-50 transition" id="btn-next">
+                        Next <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- JavaScript Dataset & Network Logic -->
+    <script>
+        /* ==========================================================================
+           1. COMPREHENSIVE DATASET (Nodes & Directed Links)
+           ========================================================================== */
+        
+        const rawNodes = [
+            // Candidate Committees
+            { id: "JONES", name: "Eric Jones Campaign", type: "CANDIDATE", category: "Self-Funding", candidate: "JONES", val: 18400000, desc: "Eric Jones for Congress Committee" },
+            { id: "THOMPSON", name: "Mike Thompson Campaign", type: "CANDIDATE", category: "PACs & Committees", candidate: "THOMPSON", val: 5482944, desc: "Mike Thompson for Congress Committee" },
+
+            // Super PACs
+            { id: "PAC_NEW_LEADERSHIP", name: "New Leadership Now Super PAC", type: "SUPER_PAC", category: "Independent Expenditure", candidate: "JONES", val: 4250000, desc: "Pro-Jones / Anti-Thompson Super PAC" },
+            { id: "PAC_CA_LEADERSHIP", name: "CA Leadership Fund Super PAC", type: "SUPER_PAC", category: "Independent Expenditure", candidate: "THOMPSON", val: 1100000, desc: "Pro-Thompson Independent Expenditure" },
+
+            // Major Industry Sectors
+            { id: "SEC_SELF", name: "Candidate Self-Funding", type: "SECTOR", category: "Self-Funding", candidate: "JONES", val: 15164133, desc: "Personal candidate loans & contributions" },
+            { id: "SEC_TECH", name: "Tech Industry & Founders", type: "SECTOR", category: "Tech Industry", candidate: "JONES", val: 1840000, desc: "Individual contributions from tech founders/execs" },
+            { id: "SEC_VC", name: "Venture Capital & PE", type: "SECTOR", category: "Venture Capital", candidate: "JONES", val: 920000, desc: "Venture capital, private equity, hedge funds" },
+            { id: "SEC_PACS", name: "Corporate & Industry PACs", type: "SECTOR", category: "PACs & Committees", candidate: "THOMPSON", val: 2440654, desc: "Business, corporate & trade association PACs" },
+            { id: "SEC_AG_WINE", name: "Agriculture & Wine Sector", type: "SECTOR", category: "Agriculture & Wine", candidate: "THOMPSON", val: 820000, desc: "Napa, Yolo, Sonoma vineyard & farm owners" },
+            { id: "SEC_REAL_LEGAL", name: "Real Estate & Legal", type: "SECTOR", category: "Real Estate & Legal", candidate: "THOMPSON", val: 680000, desc: "Local developers, attorneys, land consultants" },
+            { id: "SEC_HEALTH", name: "Healthcare & Pharma", type: "SECTOR", category: "Healthcare & Pharma", candidate: "THOMPSON", val: 540000, desc: "Physicians, health systems, biotech" },
+
+            // Individual Donors & Key Contributors
+            { id: "IND_ELISA_STAD", name: "Elisa Stad", type: "INDIVIDUAL", category: "Venture Capital", candidate: "JONES", val: 750000, desc: "Major donor to New Leadership Now" },
+            { id: "IND_MARC_STAD", name: "Marc Stad (Dragoneer)", type: "INDIVIDUAL", category: "Venture Capital", candidate: "JONES", val: 3500000, desc: "Dragoneer Investment Group founder" },
+            { id: "IND_RISHI_DIXIT", name: "Rishi Dixit", type: "INDIVIDUAL", category: "Tech Industry", candidate: "THOMPSON", val: 850000, desc: "Primary funder of CA Leadership Fund" },
+            { id: "IND_LOCAL_WINEMAKERS", name: "Napa / Sonoma Winegrowers", type: "INDIVIDUAL", category: "Agriculture & Wine", candidate: "THOMPSON", val: 820000, desc: "Consolidated local vineyard contributors" },
+
+            // Vendors & IE Disbursements
+            { id: "VEN_RED_DOG", name: "Red Dog Strategies", type: "VENDOR", category: "Independent Expenditure", candidate: "JONES", val: 1850000, desc: "Media placement & ad production" },
+            { id: "VEN_SEXTON", name: "Sexton Group", type: "VENDOR", category: "Independent Expenditure", candidate: "JONES", val: 950000, desc: "Direct mail & voter contact vendor" },
+            { id: "VEN_COMMON_BLUE", name: "Common Blue Strategies", type: "VENDOR", category: "Independent Expenditure", candidate: "JONES", val: 820000, desc: "Digital campaign & field operations" }
+        ];
+
+        const rawTransactions = [
+            // Eric Jones Self-Funding Filings
+            { id: 1, date: "2026-10-23", source: "Eric Jones (Candidate)", target: "Eric Jones Campaign", category: "Self-Funding", candidate: "JONES", type: "Candidate Loan", amount: 300000, sourceId: "SEC_SELF", targetId: "JONES" },
+            { id: 2, date: "2026-10-15", source: "Eric Jones (Candidate)", target: "Eric Jones Campaign", category: "Self-Funding", candidate: "JONES", type: "Candidate Loan", amount: 4800000, sourceId: "SEC_SELF", targetId: "JONES" },
+            { id: 3, date: "2026-09-28", source: "Eric Jones (Candidate)", target: "Eric Jones Campaign", category: "Self-Funding", candidate: "JONES", type: "Direct Contribution", amount: 5064133, sourceId: "SEC_SELF", targetId: "JONES" },
+            { id: 4, date: "2026-06-30", source: "Eric Jones (Candidate)", target: "Eric Jones Campaign", category: "Self-Funding", candidate: "JONES", type: "Candidate Loan", amount: 5000000, sourceId: "SEC_SELF", targetId: "JONES" },
+
+            // Tech & VC to Eric Jones
+            { id: 5, date: "2026-10-12", source: "Tech Industry & Founders", target: "Eric Jones Campaign", category: "Tech Industry", candidate: "JONES", type: "Individual Donors", amount: 1840000, sourceId: "SEC_TECH", targetId: "JONES" },
+            { id: 6, date: "2026-10-08", source: "Venture Capital & PE", target: "Eric Jones Campaign", category: "Venture Capital", candidate: "JONES", type: "Individual Donors", amount: 920000, sourceId: "SEC_VC", targetId: "JONES" },
+
+            // Super PAC Inflows & IE Expenditures
+            { id: 7, date: "2026-10-18", source: "Elisa Stad", target: "New Leadership Now Super PAC", category: "Venture Capital", candidate: "JONES", type: "Individual Contribution", amount: 750000, sourceId: "IND_ELISA_STAD", targetId: "PAC_NEW_LEADERSHIP" },
+            { id: 8, date: "2026-10-02", source: "Marc Stad (Dragoneer)", target: "New Leadership Now Super PAC", category: "Venture Capital", candidate: "JONES", type: "Individual Contribution", amount: 3500000, sourceId: "IND_MARC_STAD", targetId: "PAC_NEW_LEADERSHIP" },
+            { id: 9, date: "2026-10-19", source: "New Leadership Now Super PAC", target: "Red Dog Strategies", category: "Independent Expenditure", candidate: "JONES", type: "IE - Media Buy", amount: 1850000, sourceId: "PAC_NEW_LEADERSHIP", targetId: "VEN_RED_DOG" },
+            { id: 10, date: "2026-10-14", source: "New Leadership Now Super PAC", target: "Sexton Group", category: "Independent Expenditure", candidate: "JONES", type: "IE - Mailers", amount: 950000, sourceId: "PAC_NEW_LEADERSHIP", targetId: "VEN_SEXTON" },
+            { id: 11, date: "2026-10-10", source: "New Leadership Now Super PAC", target: "Common Blue Strategies", category: "Independent Expenditure", candidate: "JONES", type: "IE - Digital Ad Buy", amount: 820000, sourceId: "PAC_NEW_LEADERSHIP", targetId: "VEN_COMMON_BLUE" },
+
+            // Mike Thompson Inflows
+            { id: 12, date: "2026-10-15", source: "Corporate & Industry PACs", target: "Mike Thompson Campaign", category: "PACs & Committees", candidate: "THOMPSON", type: "PAC Contributions", amount: 2440654, sourceId: "SEC_PACS", targetId: "THOMPSON" },
+            { id: 13, date: "2026-10-11", source: "Napa / Sonoma Winegrowers", target: "Mike Thompson Campaign", category: "Agriculture & Wine", candidate: "THOMPSON", type: "Individual Donors", amount: 820000, sourceId: "SEC_AG_WINE", targetId: "THOMPSON" },
+            { id: 14, date: "2026-10-09", source: "Real Estate & Legal", target: "Mike Thompson Campaign", category: "Real Estate & Legal", candidate: "THOMPSON", type: "Individual Donors", amount: 680000, sourceId: "SEC_REAL_LEGAL", targetId: "THOMPSON" },
+            { id: 15, date: "2026-10-05", source: "Healthcare & Pharma", target: "Mike Thompson Campaign", category: "Healthcare & Pharma", candidate: "THOMPSON", type: "Individual Donors", amount: 540000, sourceId: "SEC_HEALTH", targetId: "THOMPSON" },
+
+            // Thompson Pro-Super PAC
+            { id: 16, date: "2026-10-04", source: "Rishi Dixit", target: "CA Leadership Fund Super PAC", category: "Tech Industry", candidate: "THOMPSON", type: "Individual Contribution", amount: 850000, sourceId: "IND_RISHI_DIXIT", targetId: "PAC_CA_LEADERSHIP" }
+        ];
+
+        /* ==========================================================================
+           2. GLOBAL STATE & FILTER LOGIC
+           ========================================================================== */
+        
+        let filteredNodes = [...rawNodes];
+        let filteredTransactions = [...rawTransactions];
+        let selectedNodeId = null;
+        let isPhysicsActive = true;
+        let metricMode = 'usd'; // 'usd'
+        let currentSortColumn = 'date';
+        let isSortAsc = false;
+        let currentPage = 1;
+        const pageSize = 10;
+
+        // D3 Elements
+        let svg, g, simulation, linkSelection, nodeSelection, zoomBehavior;
+
+        /* ==========================================================================
+           3. D3 FORCE NETWORK INITIALIZATION
+           ========================================================================== */
+
+        function initD3Network() {
+            const container = document.getElementById('network-container');
+            const width = container.clientWidth || 800;
+            const height = container.clientHeight || 550;
+
+            d3.select("#network-svg").selectAll("*").remove();
+
+            svg = d3.select("#network-svg")
+                .attr("width", "100%")
+                .attr("height", "100%")
+                .attr("viewBox", `0 0 ${width} ${height}`);
+
+            // Arrowheads for directed edges
+            svg.append("defs").append("marker")
+                .attr("id", "arrowhead")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 22)
+                .attr("refY", 0)
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#475569");
+
+            g = svg.append("g").attr("class", "everything");
+
+            // Zoom & Pan Behavior
+            zoomBehavior = d3.zoom()
+                .scaleExtent([0.3, 4])
+                .on("zoom", (event) => g.attr("transform", event.transform));
+
+            svg.call(zoomBehavior);
+
+            // Simulation Setup
+            simulation = d3.forceSimulation()
+                .force("link", d3.forceLink().id(d => d.id).distance(120))
+                .force("charge", d3.forceManyBody().strength(-350))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide().radius(d => getNodeRadius(d.val) + 12));
+
+            updateD3Network();
+        }
+
+        function getNodeRadius(val) {
+            return Math.max(8, Math.min(32, Math.sqrt(val / 20000) * 1.8));
+        }
+
+        function getNodeColor(node) {
+            if (node.type === "CANDIDATE") return node.candidate === "JONES" ? "#38bdf8" : "#fb7185";
+            if (node.type === "SUPER_PAC") return "#f59e0b";
+            if (node.type === "SECTOR") return "#6366f1";
+            return "#c084fc"; // Individual / Vendor
+        }
+
+        function updateD3Network() {
+            if (!simulation) return;
+
+            // Map links from filtered transactions
+            const links = filteredTransactions.map(t => ({
+                source: t.sourceId,
+                target: t.targetId,
+                value: t.amount,
+                type: t.type
+            })).filter(l => rawNodes.find(n => n.id === l.source) && rawNodes.find(n => n.id === l.target));
+
+            const activeNodeIds = new Set();
+            links.forEach(l => { activeNodeIds.add(l.source); activeNodeIds.add(l.target); });
+            
+            const nodes = rawNodes.filter(n => activeNodeIds.has(n.id) || n.type === "CANDIDATE");
+
+            // Clear old elements
+            g.selectAll("*").remove();
+
+            // Draw Links
+            linkSelection = g.append("g")
+                .selectAll("line")
+                .data(links)
+                .enter().append("line")
+                .attr("class", "link")
+                .attr("stroke", "#334155")
+                .attr("stroke-opacity", 0.6)
+                .attr("stroke-width", d => Math.max(1.5, Math.min(8, Math.sqrt(d.value / 150000))))
+                .attr("marker-end", "url(#arrowhead)");
+
+            // Draw Nodes
+            nodeSelection = g.append("g")
+                .selectAll("g")
+                .data(nodes)
+                .enter().append("g")
+                .attr("class", "node-group")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            nodeSelection.append("circle")
+                .attr("class", "node")
+                .attr("r", d => getNodeRadius(d.val))
+                .attr("fill", d => getNodeColor(d))
+                .attr("stroke", "#1e293b")
+                .attr("stroke-width", 2)
+                .on("click", (event, d) => selectNode(d))
+                .on("mouseover", showTooltip)
+                .on("mouseout", hideTooltip);
+
+            // Node Labels
+            nodeSelection.append("text")
+                .text(d => d.name)
+                .attr("x", d => getNodeRadius(d.val) + 6)
+                .attr("y", 4)
+                .attr("fill", "#f8fafc")
+                .attr("font-size", "11px")
+                .attr("font-weight", "600")
+                .attr("pointer-events", "none");
+
+            simulation.nodes(nodes).on("tick", ticked);
+            simulation.force("link").links(links);
+            simulation.alpha(0.8).restart();
+        }
+
+        function ticked() {
+            linkSelection
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            nodeSelection.attr("transform", d => `translate(${d.x},${d.y})`);
+        }
+
+        /* Drag Functions */
+        function dragstarted(event, d) {
+            if (!event.active && isPhysicsActive) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+        }
+        function dragged(event, d) {
+            d.fx = event.x; d.fy = event.y;
+        }
+        function dragended(event, d) {
+            if (!event.active && isPhysicsActive) simulation.alphaTarget(0);
+            d.fx = null; d.fy = null;
+        }
+
+        /* Tooltip Functions */
+        function showTooltip(event, d) {
+            const tt = document.getElementById("tooltip");
+            tt.innerHTML = `
+                <div class="font-bold text-white text-sm">${d.name}</div>
+                <div class="text-slate-400 text-[10px] uppercase font-semibold">${d.type} • ${d.category}</div>
+                <div class="text-emerald-400 font-extrabold mt-1">$${(d.val / 1000000).toFixed(2)}M Connected</div>
+                <div class="text-slate-300 text-[11px] mt-1">${d.desc}</div>
+            `;
+            tt.style.left = (event.pageX + 12) + "px";
+            tt.style.top = (event.pageY - 28) + "px";
+            tt.classList.remove("opacity-0");
+        }
+        function hideTooltip() {
+            document.getElementById("tooltip").classList.add("opacity-0");
+        }
+
+        /* ==========================================================================
+           4. NODE INSPECTION & HIGHLIGHTING
+           ========================================================================== */
+
+        function selectNode(node) {
+            selectedNodeId = node.id;
+
+            // Highlight in D3
+            nodeSelection.selectAll("circle")
+                .attr("opacity", d => (d.id === node.id || isConnected(node.id, d.id)) ? 1 : 0.15)
+                .attr("stroke", d => d.id === node.id ? "#ffffff" : "#1e293b")
+                .attr("stroke-width", d => d.id === node.id ? 4 : 2);
+
+            linkSelection
+                .attr("stroke-opacity", l => (l.source.id === node.id || l.target.id === node.id) ? 1 : 0.05)
+                .attr("stroke", l => (l.source.id === node.id || l.target.id === node.id) ? "#38bdf8" : "#334155");
+
+            // Populate Side Inspector Panel
+            document.getElementById("inspector-default").classList.add("hidden");
+            document.getElementById("inspector-content").classList.remove("hidden");
+
+            document.getElementById("node-title").innerText = node.name;
+            document.getElementById("node-subtitle").innerText = node.desc;
+            document.getElementById("node-total-val").innerText = `$${(node.val / 1000000).toFixed(2)}M`;
+            
+            const connectedTxs = rawTransactions.filter(t => t.sourceId === node.id || t.targetId === node.id);
+            document.getElementById("node-degree").innerText = `${connectedTxs.length} Links`;
+            document.getElementById("node-affiliation").innerText = node.candidate === "JONES" ? "Eric Jones Campaign" : "Mike Thompson Campaign";
+
+            const listContainer = document.getElementById("connected-list");
+            document.getElementById("connected-count").innerText = `${connectedTxs.length} transactions`;
+            listContainer.innerHTML = "";
+
+            connectedTxs.forEach(t => {
+                const otherName = t.sourceId === node.id ? t.target : t.source;
+                const isOutflow = t.sourceId === node.id;
+                listContainer.innerHTML += `
+                    <div class="p-2.5 bg-slate-900/80 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+                        <div>
+                            <div class="font-semibold text-white">${otherName}</div>
+                            <div class="text-[10px] text-slate-400">${t.type} • ${t.date}</div>
+                        </div>
+                        <div class="text-right font-mono">
+                            <div class="font-bold ${isOutflow ? 'text-amber-400' : 'text-emerald-400'}">${isOutflow ? '-' : '+'}$${(t.amount / 1000).toFixed(0)}k</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function isConnected(a, b) {
+            return rawTransactions.some(t => (t.sourceId === a && t.targetId === b) || (t.sourceId === b && t.targetId === a));
+        }
+
+        function resetSelection() {
+            selectedNodeId = null;
+            if (nodeSelection) {
+                nodeSelection.selectAll("circle").attr("opacity", 1).attr("stroke", "#1e293b").attr("stroke-width", 2);
+                linkSelection.attr("stroke-opacity", 0.6).attr("stroke", "#334155");
+            }
+            document.getElementById("inspector-default").classList.remove("hidden");
+            document.getElementById("inspector-content").classList.add("hidden");
+        }
+
+        /* ==========================================================================
+           5. MULTI-LEVEL FILTERING & AGGREGATION
+           ========================================================================== */
+
+        function applyFilters() {
+            const candFilter = document.getElementById("filter-candidate").value;
+            const typeFilter = document.getElementById("filter-type").value;
+            const sectorFilter = document.getElementById("filter-sector").value;
+            const minAmount = parseFloat(document.getElementById("min-amount-slider").value);
+            const query = document.getElementById("search-input").value.toLowerCase();
+
+            filteredTransactions = rawTransactions.filter(t => {
+                const matchCand = candFilter === "ALL" || t.candidate === candFilter;
+                const matchSector = sectorFilter === "ALL" || t.category === sectorFilter;
+                const matchAmount = t.amount >= minAmount;
+                const matchQuery = !query || t.source.toLowerCase().includes(query) || t.target.toLowerCase().includes(query) || t.category.toLowerCase().includes(query);
+                return matchCand && matchSector && matchAmount && matchQuery;
+            });
+
+            // Update KPIs
+            const totalVol = filteredTransactions.reduce((acc, t) => acc + t.amount, 0);
+            document.getElementById("kpi-volume").innerText = `$${(totalVol / 1000000).toFixed(2)}M`;
+            document.getElementById("kpi-tx-count").innerText = `${filteredTransactions.length} Records`;
+            
+            updateD3Network();
+            renderLedgerTable();
+        }
+
+        function updateSliderValue(val) {
+            document.getElementById("slider-val-display").innerText = `$${(val / 1000).toFixed(0)}k`;
+        }
+
+        function handleSearch(val) {
+            document.getElementById("clear-search").classList.toggle("hidden", !val);
+            applyFilters();
+        }
+
+        function clearSearch() {
+            document.getElementById("search-input").value = "";
+            document.getElementById("clear-search").classList.add("hidden");
+            applyFilters();
+        }
+
+        /* ==========================================================================
+           6. TRANSACTION LEDGER TABLE & PAGINATION
+           ========================================================================== */
+
+        function renderLedgerTable() {
+            const tbody = document.getElementById("ledger-tbody");
+            tbody.innerHTML = "";
+
+            // Sort
+            filteredTransactions.sort((a, b) => {
+                let valA = a[currentSortColumn];
+                let valB = b[currentSortColumn];
+                if (typeof valA === "string") valA = valA.toLowerCase();
+                if (typeof valB === "string") valB = valB.toLowerCase();
+                return isSortAsc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+            });
+
+            const totalPages = Math.ceil(filteredTransactions.length / pageSize) || 1;
+            currentPage = Math.min(currentPage, totalPages);
+
+            const startIdx = (currentPage - 1) * pageSize;
+            const pageData = filteredTransactions.slice(startIdx, startIdx + pageSize);
+
+            document.getElementById("page-num").innerText = currentPage;
+            document.getElementById("page-total").innerText = totalPages;
+            document.getElementById("table-count-display").innerText = filteredTransactions.length;
+
+            document.getElementById("btn-prev").disabled = currentPage === 1;
+            document.getElementById("btn-next").disabled = currentPage === totalPages;
+
+            pageData.forEach(t => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <td class="py-3 px-4 text-slate-400">${t.date}</td>
+                        <td class="py-3 px-4 text-white font-semibold">${t.source}</td>
+                        <td class="py-3 px-4 text-indigo-300 font-semibold">${t.target}</td>
+                        <td class="py-3 px-4 text-slate-300"><span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px]">${t.category}</span></td>
+                        <td class="py-3 px-4 text-slate-400">${t.type}</td>
+                        <td class="py-3 px-4 text-right font-bold text-emerald-400">$${t.amount.toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function sortTable(col) {
+            if (currentSortColumn === col) { isSortAsc = !isSortAsc; }
+            else { currentSortColumn = col; isSortAsc = false; }
+            renderLedgerTable();
+        }
+
+        function changePage(delta) {
+            currentPage += delta;
+            renderLedgerTable();
+        }
+
+        /* ==========================================================================
+           7. UTILITY & CONTROLS
+           ========================================================================== */
+
+        function togglePhysics() {
+            isPhysicsActive = !isPhysicsActive;
+            if (isPhysicsActive) {
+                simulation.alphaTarget(0.3).restart();
+                document.getElementById("lbl-physics").innerText = "Pause Physics";
+            } else {
+                simulation.stop();
+                document.getElementById("lbl-physics").innerText = "Resume Physics";
+            }
+        }
+
+        function resetZoom() {
+            svg.transition().duration(750).call(zoomBehavior.transform, d3.zoomIdentity);
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle("light");
+            const isLight = document.body.classList.contains("light");
+            document.getElementById("theme-icon").className = isLight ? "fa-solid fa-sun text-amber-400" : "fa-solid fa-moon text-slate-300";
+        }
+
+        function exportCSV() {
+            let csv = "Date,Source,Target,Category,Candidate,Type,Amount\n";
+            filteredTransactions.forEach(t => {
+                csv += `"${t.date}","${t.source}","${t.target}","${t.category}","${t.candidate}","${t.type}",${t.amount}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `CA04_Campaign_Finance_Network_${new Date().toISOString().slice(0,10)}.csv`);
+            a.click();
+        }
+
+        // Initialize on window load
+        window.onload = function() {
+            initD3Network();
+            applyFilters();
+        };
+
+        window.onresize = function() {
+            initD3Network();
+        };
+    </script>
+</body>
+</html>
